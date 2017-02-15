@@ -390,4 +390,20 @@ interface ProductValueInterface
      * @return string
      */
     public function __toString();
+
+
+    /**
+     * @return ArrayCollection|string[]
+     */
+    public function getTextCollection();
+
+    /**
+     * @param ArrayCollection|string[]|null $collection
+     */
+    public function setTextCollection($collection);
+
+    /**
+     * @param string $value
+     */
+    public function addTextCollectionItem($value);
 }
