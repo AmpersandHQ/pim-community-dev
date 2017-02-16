@@ -33,7 +33,7 @@ class TextCollectionAttributeSetter extends AbstractAttributeSetter
     /**
      * {@inheritdoc}
      *
-     * Expected data input format: "my text to update"
+     * Expected data input format: ['foo','bar','baz']
      */
     public function setAttributeData(
         ProductInterface $product,

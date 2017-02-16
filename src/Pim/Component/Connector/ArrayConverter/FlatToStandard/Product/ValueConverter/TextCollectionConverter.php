@@ -57,14 +57,16 @@ class TextCollectionConverter implements ValueConverterInterface
     public function convert(array $attributeFieldInfo, $value)
     {
         if ('' === trim($value)) {
-            return null;
+            $data = [];
+        } else {
+            $data = explode(TextCollectionType::FLAT_SEPARATOR, $value);
         }
 
         return [
             $attributeFieldInfo['attribute']->getCode() => [[
                 'locale' => $attributeFieldInfo['locale_code'],
                 'scope'  => $attributeFieldInfo['scope_code'],
-                'data'   => explode(TextCollectionType::FLAT_SEPARATOR, $value),
+                'data'   => $data,
             ]],
         ];
     }

@@ -5,29 +5,23 @@ namespace Pim\Component\Catalog\Validator\ConstraintGuesser;
 use Pim\Component\Catalog\AttributeTypes;
 use Pim\Component\Catalog\Validator\ConstraintGuesserInterface;
 use Pim\Component\Catalog\Model\AttributeInterface;
-use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Constraints\All;
 
 /**
- * Validation guesser for the text collection attribute type.
+ * URL collection guesser.
  *
  * @author JM Leroux <jean-marie.leroux@akeneo.com>
  * @copyright 2016 Akeneo SAS (http://www.akeneo.com)
  * @license   http://opensource.org/licenses/osl-3.0.php Open Software License (OSL 3.0)
  */
-class TextCollectionGuesser implements ConstraintGuesserInterface
+class ConstraintCollectionGuesser implements ConstraintGuesserInterface
 {
     /**
      * {@inheritdoc}
      */
     public function supportAttribute(AttributeInterface $attribute)
     {
-        return in_array(
-            $attribute->getAttributeType(),
-            [
-                AttributeTypes::TEXT_COLLECTION,
-            ]
-        );
+        return AttributeTypes::TEXT_COLLECTION === $attribute->getAttributeType();
     }
 
     /**
@@ -36,16 +30,19 @@ class TextCollectionGuesser implements ConstraintGuesserInterface
     public function guessConstraints(AttributeInterface $attribute)
     {
         $constraints = [];
+        $guesser = null;
 
         if ('url' === $attribute->getValidationRule()) {
-            $urlGuesser = new UrlGuesser();
+            $guesser = new UrlGuesser();
+        } elseif ('regexp' === $attribute->getValidationRule() && $pattern = $attribute->getValidationRegexp()) {
+            $guesser = new RegexGuesser();
+        } elseif ('email' === $attribute->getValidationRule()) {
+            $guesser = new EmailGuesser();
+        }
 
+        if (null !== $guesser) {
             return [
-                new All(
-                    [
-                        'constraints' => $urlGuesser->guessConstraints($attribute)
-                    ]
-                )
+                new All(['constraints' => $guesser->guessConstraints($attribute)])
             ];
         }
 

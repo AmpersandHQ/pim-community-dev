@@ -12,12 +12,7 @@ use Pim\Bundle\CatalogBundle\AttributeType\TextCollectionType;
 class TextCollectionConverter extends AbstractValueConverter implements ValueConverterInterface
 {
     /**
-     * Converts a value
-     *
-     * @param string $attributeCode
-     * @param mixed  $data
-     *
-     * @return array
+     * {@inheritdoc}
      */
     public function convert($attributeCode, $data)
     {

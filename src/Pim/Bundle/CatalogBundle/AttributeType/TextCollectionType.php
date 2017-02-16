@@ -14,8 +14,7 @@ use Pim\Component\Catalog\Model\AttributeInterface;
  */
 class TextCollectionType extends AbstractAttributeType
 {
-    /** @var string List separator for flat format */
-    const FLAT_SEPARATOR = ',';
+    const FLAT_SEPARATOR = ';';
 
     /**
      * {@inheritdoc}
@@ -23,23 +22,23 @@ class TextCollectionType extends AbstractAttributeType
     protected function defineCustomAttributeProperties(AttributeInterface $attribute)
     {
         $properties = parent::defineCustomAttributeProperties($attribute) + [
-                'validationRule' => [
-                    'name'      => 'validationRule',
-                    'fieldType' => 'choice',
-                    'options'   => [
-                        'choices' => [
-                            null     => 'None',
-                            'email'  => 'E-mail',
-                            'url'    => 'URL',
-                            'regexp' => 'Regular expression'
-                        ],
-                        'select2' => true
-                    ]
+            'validationRule'   => [
+                'name'      => 'validationRule',
+                'fieldType' => 'choice',
+                'options'   => [
+                    'choices' => [
+                        null     => 'None',
+                        'email'  => 'E-mail',
+                        'url'    => 'URL',
+                        'regexp' => 'Regular expression',
+                    ],
+                    'select2' => true,
                 ],
-                'validationRegexp' => [
-                    'name' => 'validationRegexp'
-                ]
-            ];
+            ],
+            'validationRegexp' => [
+                'name' => 'validationRegexp',
+            ],
+        ];
 
         $properties['unique']['options']['disabled'] = false;
         $properties['unique']['options']['read_only'] = false;

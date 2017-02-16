@@ -391,14 +391,13 @@ interface ProductValueInterface
      */
     public function __toString();
 
-
     /**
      * @return ArrayCollection|string[]
      */
     public function getTextCollection();
 
     /**
-     * @param ArrayCollection|string[]|null $collection
+     * @param ArrayCollection|string[] $collection
      */
     public function setTextCollection($collection);
 
