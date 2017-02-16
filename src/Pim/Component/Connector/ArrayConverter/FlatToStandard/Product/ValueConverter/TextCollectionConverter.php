@@ -9,7 +9,7 @@ use Pim\Bundle\CatalogBundle\AttributeType\TextCollectionType;
  *
  * Flat format:
  * [
- *      'my-collection' => "foo;bar;baz",
+ *      'my_collection-en_US' => "foo;bar;baz",
  * ]
  *
  * Standard format:
