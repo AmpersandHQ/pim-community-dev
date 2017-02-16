@@ -672,12 +672,4 @@ abstract class AbstractProductValue implements ProductValueInterface
     {
         $this->textCollection = $collection;
     }
-
-    /**
-     * @param string $value
-     */
-    public function addTextCollectionItem($value)
-    {
-        $this->textCollection[] = $value;
-    }
 }

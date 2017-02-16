@@ -400,9 +400,4 @@ interface ProductValueInterface
      * @param ArrayCollection|string[] $collection
      */
     public function setTextCollection($collection);
-
-    /**
-     * @param string $value
-     */
-    public function addTextCollectionItem($value);
 }

@@ -5,9 +5,8 @@ namespace Pim\Component\Connector\ArrayConverter\FlatToStandard\Product\ValueCon
 use Pim\Bundle\CatalogBundle\AttributeType\TextCollectionType;
 
 /**
- * Converts a range value from Akeneo PIM flat format to Akeneo PIM standard format
+ * Converts a text collection from Akeneo PIM flat format to Akeneo PIM standard format
  *
- * Here is an example with the temperature attribute.
  * Flat format:
  * [
  *      'my-collection' => "foo;bar;baz",
