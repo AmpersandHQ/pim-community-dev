@@ -1,5 +1,5 @@
-<div id="<%- fieldId %>">
-    <table class="AknTextCollectionValues">
+<div id="<%- fieldId %>" class="AknTextCollection">
+    <table class="AknTextCollection-items">
         <tbody>
         <% if (null !== value.data) { %>
         <% value.data.forEach(function(text){ %>
@@ -7,14 +7,14 @@
             <% if (editMode !== 'view') { %>
             <td class="handle"><i class="icon-reorder"></i></td>
             <% } %>
-            <td><input type="text" class="AknTextCollectionValue"
+            <td><input type="text" class="AknTextField AknTextCollection-item"
                 <%= editMode === 'view' ? 'disabled' : '' %>
                 value="<%- text %>"
                 />
             </td>
             <% if (editMode !== 'view') { %>
-            <td class="AknTextCollectionActions">
-                <button class="btn btn-small action-delete" type="button"><i class="icon-remove"></i></button>
+            <td class="AknTextCollection-actions">
+                <button class="AknButton AknButton--small AknTextCollection-deleteButton" type="button"><i class="icon-remove"></i></button>
             </td>
             <% } %>
         </tr>
@@ -25,10 +25,10 @@
         <tr>
             <td></td>
             <td><input type="text"
-                       class="AknTextCollectionNewValue"
+                       class="AknTextField AknTextCollection-newItem"
             /></td>
-            <td class="AknTextCollectionActions"><button
-                    class="btn btn-success AknTextCollectionButton-Add"
+            <td class="AknTextCollection-actions"><button
+                    class="AknButton AknButton--small AknTextCollection-addButton"
             >Add item</button></td>
         </tr>
         <% } %>

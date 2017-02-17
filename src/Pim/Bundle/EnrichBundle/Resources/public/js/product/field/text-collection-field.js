@@ -29,13 +29,13 @@ define(
                 var $tableBody = $fieldInput.find('tbody');
                 var self = this;
 
-                $fieldInput.find('.AknTextCollectionButton-Add').click(function () {
+                $fieldInput.find('.AknTextCollection-addButton').click(function () {
                     this.addRow();
                 }.bind(this));
 
                 $tableBody
-                    .on('change', '.AknTextCollectionValue', this.updateModel.bind(this))
-                    .on('click', '.action-delete', function () {
+                    .on('change', '.AknTextCollection-item', this.updateModel.bind(this))
+                    .on('click', '.AknTextCollection-deleteButton', function () {
                         $(this).closest('tr').remove();
                         self.updateModel();
 
@@ -62,7 +62,7 @@ define(
                     });
             },
             addRow: function () {
-                var newValue = this.$el.find('.AknTextCollectionNewValue').val();
+                var newValue = this.$el.find('.AknTextCollection-newItem').val();
                 var values = [];
                 if (null !== this.getCurrentValue().data) {
                     values = this.getCurrentValue().data;
@@ -74,9 +74,9 @@ define(
             },
             updateModel: function () {
                 var values = [];
-                this.$('.field-input:first .AknTextCollectionValues tbody tr').each(function () {
+                this.$('.field-input:first .AknTextCollection-items tbody tr').each(function () {
                     var $row = $(this);
-                    var text = $row.find('.AknTextCollectionValue').val();
+                    var text = $row.find('.AknTextCollection-item').val();
                     if ('' !== $.trim(text)) {
                         values.push(text);
                     }
@@ -84,7 +84,7 @@ define(
                 this.setCurrentValue(values);
             },
             setFocus: function () {
-                this.$('.AknTextCollectionNewValue').focus();
+                this.$('.AknTextCollection-newItem').focus();
             }
         });
     }
