@@ -87,8 +87,3 @@ services:
             - ['date_min', 'date_max']
         tags:
             - { name: pim_catalog.localization.presenter, type: 'attribute_option' }
-
-    pim_catalog.localization.presenter.text_collection:
-        class: '%pim_catalog.localization.presenter.text_collection.class%'
-        tags:
-            - { name: pim_catalog.localization.presenter, type: 'product_value' }
