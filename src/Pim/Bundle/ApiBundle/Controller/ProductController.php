@@ -22,10 +22,13 @@ use Pim\Component\Catalog\Query\Filter\Operators;
 use Pim\Component\Catalog\Query\ProductQueryBuilderFactoryInterface;
 use Pim\Component\Catalog\Query\ProductQueryBuilderInterface;
 use Pim\Component\Catalog\Repository\ProductRepositoryInterface;
+use Pim\Component\Catalog\Validator\UniqueValuesSet;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 use Symfony\Component\Routing\RouterInterface;
@@ -84,6 +87,18 @@ class ProductController
     /** @var ProductFilterInterface */
     protected $emptyValuesFilter;
 
+    /** @var NormalizerInterface */
+    protected $fosNormalizer;
+
+    /** @var NormalizerInterface */
+    protected $apiNormalizer;
+
+    /** @var UniqueValuesSet */
+    protected $uniqueValueSet;
+
+    /** @var int */
+    protected $bufferSize;
+
     /** @var string */
     protected $urlDocumentation;
 
@@ -103,6 +118,10 @@ class ProductController
      * @param SaverInterface                        $saver
      * @param RouterInterface                       $router
      * @param ProductFilterInterface                $emptyValuesFilter
+     * @param NormalizerInterface                   $fosNormalizer
+     * @param NormalizerInterface                   $apiNormalizer
+     * @param UniqueValuesSet                       $uniqueValueSet
+     * @param int                                   $bufferSize
      * @param string                                $urlDocumentation
      */
     public function __construct(
@@ -121,6 +140,10 @@ class ProductController
         SaverInterface $saver,
         RouterInterface $router,
         ProductFilterInterface $emptyValuesFilter,
+        NormalizerInterface $fosNormalizer,
+        NormalizerInterface $apiNormalizer,
+        UniqueValuesSet $uniqueValuesSet,
+        $bufferSize,
         $urlDocumentation
     ) {
         $this->pqbFactory = $pqbFactory;
@@ -138,6 +161,10 @@ class ProductController
         $this->saver = $saver;
         $this->router = $router;
         $this->emptyValuesFilter = $emptyValuesFilter;
+        $this->fosNormalizer = $fosNormalizer;
+        $this->apiNormalizer = $apiNormalizer;
+        $this->uniqueValueSet = $uniqueValuesSet;
+        $this->bufferSize = $bufferSize;
         $this->urlDocumentation = sprintf($urlDocumentation, substr(Version::VERSION, 0, 3));
     }
 
@@ -276,6 +303,9 @@ class ProductController
     }
 
     /**
+     * Update or create a product.
+     * Normalization of the exception are handled directly by the listeners on the response.
+     *
      * @param Request $request
      * @param string  $code
      *
@@ -285,18 +315,117 @@ class ProductController
      */
     public function partialUpdateAction(Request $request, $code)
     {
-        $data = $this->getDecodedContent($request->getContent());
+        return $this->partialProductUpdate($request->getContent(), $code);
+    }
 
+    /**
+     * Update a list of products one by one, reading the input as a stream.
+     * Each line of the stream should be the standard format of a product.
+     *
+     * Then, each update is handled as an individual PATCH request, except that the listeners
+     * processing the listeners processing the response re not executed as for the PATCH of a single product.
+     *
+     * That's why the normalization of the exceptions thrown by the update of a product is handled directly
+     * in this action and not by the listeners.
+     *
+     * @param Request $request
+     *
+     * @throws BadRequestHttpException
+     *
+     * @return Response
+     */
+    public function partialUpdateListAction(Request $request)
+    {
+        $response = new StreamedResponse();
+
+        $fosNormalizer = $this->fosNormalizer;
+        $apiNormalizer = $this->apiNormalizer;
+
+        $response->setCallback(function() use ($request, $fosNormalizer, $apiNormalizer) {
+            $streamContent = $request->getContent(true);
+
+            $line = true;
+            do {
+                try {
+                    $line = $this->readBuffer($streamContent);
+                    if (false !== $line) {
+                        $response = $this->partialProductUpdate($line, null);
+                        $this->uniqueValueSet->reset();
+                        echo json_encode(['code' => $response->getStatusCode()]).PHP_EOL;
+                    }
+                } catch (DocumentedHttpException $e) {
+                    $error = $apiNormalizer->normalize($e);
+                    echo json_encode($error).PHP_EOL;
+                } catch (ViolationHttpException $e) {
+                    $error = $apiNormalizer->normalize($e);
+                    echo json_encode($error).PHP_EOL;
+                } catch (HttpException $e) {
+                    $error = $fosNormalizer->normalize($e);
+                    echo json_encode($error).PHP_EOL;
+                }
+
+                ob_flush();
+            } while (false !== $line);
+
+        });
+
+        $response->send();
+        return $response;
+    }
+
+    /**
+     * Read a line of a stream.
+     * If the line is too long fot the buffer, consume the rest of the line
+     * and throws an exception.
+     *
+     * @param $streamContent
+     *
+     * @throws UnprocessableEntityHttpException
+     * @return string
+     */
+    protected function readBuffer($streamContent)
+    {
+        $buffer = stream_get_line($streamContent, $this->bufferSize + 1, PHP_EOL);
+        $bufferSizeExceeded = strlen($buffer) > $this->bufferSize;
+
+        while (strlen($buffer) > $this->bufferSize) {
+            $buffer = stream_get_line($streamContent, $this->bufferSize + 1, PHP_EOL);
+        }
+
+        if ($bufferSizeExceeded) {
+            throw new UnprocessableEntityHttpException("Line is too long.");
+        }
+
+        return $buffer;
+    }
+
+    /**
+     * Create or update a single product.
+     *
+     * @param string      $jsonContent product standardized with the json format
+     * @param string|null $code        code of the product provided in the url, null if not present in the url
+     *
+     * @return Response
+     */
+    protected function partialProductUpdate($jsonContent, $code)
+    {
+        $data = $this->getDecodedContent($jsonContent);
         $isCreation = false;
+
+        if (null === $code && array_key_exists('identifier', $data)) {
+            $code = $data['identifier'];
+        }
+
         $product = $this->productRepository->findOneByIdentifier($code);
 
         if (null === $product) {
+
             $isCreation = true;
 
             $this->validateCodeConsistency($code, $data);
             $data['identifier'] = $code;
-            $data = $this->populateIdentifierProductValue($data);
 
+            $data = $this->populateIdentifierProductValue($data);
             $product = $this->productBuilder->createProduct();
         } else {
             $data['identifier'] = array_key_exists('identifier', $data) ? $data['identifier'] : $code;

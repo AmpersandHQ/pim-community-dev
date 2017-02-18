@@ -88,15 +88,15 @@ class CheckHeadersRequestSubscriber implements EventSubscriberInterface
                     );
                 }
 
-                if ($contentType !== $best->getValue()) {
-                    throw new UnsupportedMediaTypeHttpException(
-                        sprintf(
-                            '"%s" in "Content-Type" header is not valid. Only "%s" is allowed.',
-                            $contentType,
-                            $best->getValue()
-                        )
-                    );
-                }
+                //if ($contentType !== $best->getValue()) {
+                //    throw new UnsupportedMediaTypeHttpException(
+                //        sprintf(
+                //            '"%s" in "Content-Type" header is not valid. Only "%s" is allowed.',
+                //            $contentType,
+                //            $best->getValue()
+                //        )
+                //    );
+                //}
             }
         } catch (StopFormatListenerException $e) {
             // do nothing.
