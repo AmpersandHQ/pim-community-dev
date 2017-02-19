@@ -32,6 +32,7 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
+use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -88,11 +89,8 @@ class ProductController
     /** @var ProductFilterInterface */
     protected $emptyValuesFilter;
 
-    /** @var NormalizerInterface */
-    protected $fosNormalizer;
-
-    /** @var NormalizerInterface */
-    protected $apiNormalizer;
+    /** @var HttpKernelInterface */
+    protected $httpKernel;
 
     /** @var UniqueValuesSet */
     protected $uniqueValuesSet;
@@ -122,8 +120,7 @@ class ProductController
      * @param SaverInterface                        $saver
      * @param RouterInterface                       $router
      * @param ProductFilterInterface                $emptyValuesFilter
-     * @param NormalizerInterface                   $fosNormalizer
-     * @param NormalizerInterface                   $apiNormalizer
+     * @param HttpKernelInterface                   $httpKernel
      * @param UniqueValuesSet                       $uniqueValuesSet
      * @param ObjectDetacherInterface               $detacher
      * @param int                                   $bufferSize
@@ -145,8 +142,7 @@ class ProductController
         SaverInterface $saver,
         RouterInterface $router,
         ProductFilterInterface $emptyValuesFilter,
-        NormalizerInterface $fosNormalizer,
-        NormalizerInterface $apiNormalizer,
+        HttpKernelInterface $httpKernel,
         UniqueValuesSet $uniqueValuesSet,
         ObjectDetacherInterface $detacher,
         $bufferSize,
@@ -167,8 +163,7 @@ class ProductController
         $this->saver = $saver;
         $this->router = $router;
         $this->emptyValuesFilter = $emptyValuesFilter;
-        $this->fosNormalizer = $fosNormalizer;
-        $this->apiNormalizer = $apiNormalizer;
+        $this->httpKernel = $httpKernel;
         $this->uniqueValuesSet = $uniqueValuesSet;
         $this->detacher = $detacher;
         $this->bufferSize = $bufferSize;
@@ -360,10 +355,7 @@ class ProductController
     {
         $response = new StreamedResponse();
 
-        $fosNormalizer = $this->fosNormalizer;
-        $apiNormalizer = $this->apiNormalizer;
-
-        $response->setCallback(function() use ($request, $fosNormalizer, $apiNormalizer) {
+        $response->setCallback(function() use ($request) {
             $streamContent = $request->getContent(true);
 
             $line = true;
@@ -374,20 +366,30 @@ class ProductController
                         continue;
                     }
                     $data = $this->getDecodedContent($line);
-                    $response = $this->partialProductUpdate($data, null);
+
+                    if (!isset($data['identifier'])) {
+                        throw new UnprocessableEntityHttpException('Identifier is missing');
+                    }
+                    $subRequest = new Request([], [], [], [], [], [], $line);
+                    $subRequest->setRequestFormat('json');
+                    $subRequest->attributes->add([
+                        '_controller' => 'pim_api.controller.product:partialUpdateAction',
+                        'code'        => $data['identifier'],
+                    ]);
+
+                    $subResponse = $this->httpKernel->handle($subRequest, HttpKernelInterface::SUB_REQUEST);
+
                     $this->uniqueValuesSet->reset();
-                    $response = ['code' => $response->getStatusCode()];
-                } catch (DocumentedHttpException $e) {
-                    $response = $apiNormalizer->normalize($e);
-                } catch (ViolationHttpException $e) {
-                    $response = $apiNormalizer->normalize($e);
+
+                    if ('' !== $subResponse->getContent()) {
+                        $response = ['identifier' => $data['identifier']] + json_decode($subResponse->getContent(), true);
+                    } else {
+                        $response = ['identifier' => $data['identifier'],  'code' => $subResponse->getStatusCode()];
+                    }
                 } catch (HttpException $e) {
-                    $response = $fosNormalizer->normalize($e);
+                    $response = ['code' => $e->getStatusCode(), 'message' => $e->getMessage()];
                 }
 
-                if (isset($data['identifier'])) {
-                    $response['identifier'] = $data['identifier'];
-                }
                 $this->flushOutputBuffer($response);
 
                 //$date = date('h-i-s');
@@ -457,7 +459,6 @@ class ProductController
         $product = $this->productRepository->findOneByIdentifier($code);
 
         if (null === $product) {
-
             $isCreation = true;
 
             $this->validateCodeConsistency($code, $data);
