@@ -2,6 +2,7 @@
 
 namespace Pim\Bundle\ApiBundle\Controller;
 
+use Akeneo\Component\StorageUtils\Detacher\ObjectDetacherInterface;
 use Akeneo\Component\StorageUtils\Exception\PropertyException;
 use Akeneo\Component\StorageUtils\Exception\UnknownPropertyException;
 use Akeneo\Component\StorageUtils\Remover\RemoverInterface;
@@ -94,7 +95,10 @@ class ProductController
     protected $apiNormalizer;
 
     /** @var UniqueValuesSet */
-    protected $uniqueValueSet;
+    protected $uniqueValuesSet;
+
+    /** @var ObjectDetacherInterface */
+    protected $detacher;
 
     /** @var int */
     protected $bufferSize;
@@ -120,7 +124,8 @@ class ProductController
      * @param ProductFilterInterface                $emptyValuesFilter
      * @param NormalizerInterface                   $fosNormalizer
      * @param NormalizerInterface                   $apiNormalizer
-     * @param UniqueValuesSet                       $uniqueValueSet
+     * @param UniqueValuesSet                       $uniqueValuesSet
+     * @param ObjectDetacherInterface               $detacher
      * @param int                                   $bufferSize
      * @param string                                $urlDocumentation
      */
@@ -143,6 +148,7 @@ class ProductController
         NormalizerInterface $fosNormalizer,
         NormalizerInterface $apiNormalizer,
         UniqueValuesSet $uniqueValuesSet,
+        ObjectDetacherInterface $detacher,
         $bufferSize,
         $urlDocumentation
     ) {
@@ -163,7 +169,8 @@ class ProductController
         $this->emptyValuesFilter = $emptyValuesFilter;
         $this->fosNormalizer = $fosNormalizer;
         $this->apiNormalizer = $apiNormalizer;
-        $this->uniqueValueSet = $uniqueValuesSet;
+        $this->uniqueValuesSet = $uniqueValuesSet;
+        $this->detacher = $detacher;
         $this->bufferSize = $bufferSize;
         $this->urlDocumentation = sprintf($urlDocumentation, substr(Version::VERSION, 0, 3));
     }
@@ -248,6 +255,20 @@ class ProductController
      */
     public function getAction(Request $request, $code)
     {
+
+        $products = $this->productRepository->findAll();
+
+        $fp = fopen('export.json', 'w');
+
+        foreach($products as $product) {
+            $standardizedProduct = $this->normalizer->normalize($product, 'standard');
+            $standardizedProduct['identifier'] = $standardizedProduct["identifier"] . '_copy';
+            $standardizedProduct['variant_group'] = null;
+            $standardizedProduct['groups'] = [];
+            fwrite($fp, json_encode($standardizedProduct).PHP_EOL);
+        }
+        fclose($fp);
+
         $product = $this->productRepository->findOneByIdentifier($code);
         if (null === $product) {
             throw new NotFoundHttpException(sprintf('Product "%s" does not exist.', $code));
@@ -315,7 +336,8 @@ class ProductController
      */
     public function partialUpdateAction(Request $request, $code)
     {
-        return $this->partialProductUpdate($request->getContent(), $code);
+        $data = $this->getDecodedContent($request->getContent());
+        return $this->partialProductUpdate($data, $code);
     }
 
     /**
@@ -323,7 +345,7 @@ class ProductController
      * Each line of the stream should be the standard format of a product.
      *
      * Then, each update is handled as an individual PATCH request, except that the listeners
-     * processing the listeners processing the response re not executed as for the PATCH of a single product.
+     * processing the response are not executed as for the PATCH of a single product.
      *
      * That's why the normalization of the exceptions thrown by the update of a product is handled directly
      * in this action and not by the listeners.
@@ -347,34 +369,51 @@ class ProductController
             $line = true;
             do {
                 try {
-                    $line = $this->readBuffer($streamContent);
-                    if (false !== $line) {
-                        $response = $this->partialProductUpdate($line, null);
-                        $this->uniqueValueSet->reset();
-                        echo json_encode(['code' => $response->getStatusCode()]).PHP_EOL;
+                    $line = $this->readInputBuffer($streamContent);
+                    if (false === $line) {
+                        continue;
                     }
+                    $data = $this->getDecodedContent($line);
+                    $response = $this->partialProductUpdate($data, null);
+                    $this->uniqueValuesSet->reset();
+                    $response = ['code' => $response->getStatusCode()];
                 } catch (DocumentedHttpException $e) {
-                    $error = $apiNormalizer->normalize($e);
-                    echo json_encode($error).PHP_EOL;
+                    $response = $apiNormalizer->normalize($e);
                 } catch (ViolationHttpException $e) {
-                    $error = $apiNormalizer->normalize($e);
-                    echo json_encode($error).PHP_EOL;
+                    $response = $apiNormalizer->normalize($e);
                 } catch (HttpException $e) {
-                    $error = $fosNormalizer->normalize($e);
-                    echo json_encode($error).PHP_EOL;
+                    $response = $fosNormalizer->normalize($e);
                 }
 
-                ob_flush();
+                if (isset($data['identifier'])) {
+                    $response['identifier'] = $data['identifier'];
+                }
+                $this->flushOutputBuffer($response);
+
+                //$date = date('h-i-s');
+                //gc_collect_cycles();
+                //meminfo_objects_summary(fopen(sprintf('/tmp/memory/summary_%s', $date), 'w'));
             } while (false !== $line);
 
         });
 
-        $response->send();
         return $response;
     }
 
     /**
-     * Read a line of a stream.
+     * Flush the buffer with the content encoded with JSON.
+     * A carriage return is added to separate the content from the next line.
+     *
+     * @param $content
+     */
+    protected function flushOutputBuffer($content)
+    {
+        echo json_encode($content).PHP_EOL;
+        ob_flush();
+    }
+
+    /**
+     * Read a line from a stream.
      * If the line is too long fot the buffer, consume the rest of the line
      * and throws an exception.
      *
@@ -383,7 +422,7 @@ class ProductController
      * @throws UnprocessableEntityHttpException
      * @return string
      */
-    protected function readBuffer($streamContent)
+    protected function readInputBuffer($streamContent)
     {
         $buffer = stream_get_line($streamContent, $this->bufferSize + 1, PHP_EOL);
         $bufferSizeExceeded = strlen($buffer) > $this->bufferSize;
@@ -402,14 +441,13 @@ class ProductController
     /**
      * Create or update a single product.
      *
-     * @param string      $jsonContent product standardized with the json format
-     * @param string|null $code        code of the product provided in the url, null if not present in the url
+     * @param array       $data standardized product
+     * @param string|null $code code of the product provided in the url, null if not present in the url
      *
      * @return Response
      */
-    protected function partialProductUpdate($jsonContent, $code)
+    protected function partialProductUpdate(array $data, $code)
     {
-        $data = $this->getDecodedContent($jsonContent);
         $isCreation = false;
 
         if (null === $code && array_key_exists('identifier', $data)) {
@@ -436,6 +474,7 @@ class ProductController
         $this->updateProduct($product, $data);
         $this->validateProduct($product);
         $this->saver->save($product);
+        $this->detacher->detach($product);
 
         $status = $isCreation ? Response::HTTP_CREATED : Response::HTTP_NO_CONTENT;
         $response = $this->getResponse($product, $status);
@@ -476,6 +515,7 @@ class ProductController
         try {
             $this->updater->update($product, $data);
         } catch (UnknownPropertyException $exception) {
+            $this->detacher->detach($product);
             throw new DocumentedHttpException(
                 $this->urlDocumentation,
                 sprintf(
@@ -485,6 +525,7 @@ class ProductController
                 $exception
             );
         } catch (PropertyException $exception) {
+            $this->detacher->detach($product);
             throw new DocumentedHttpException(
                 $this->urlDocumentation,
                 sprintf('%s Check the standard format documentation.', $exception->getMessage()),
@@ -530,6 +571,7 @@ class ProductController
     {
         $violations = $this->productValidator->validate($product);
         if (0 !== $violations->count()) {
+            $this->detacher->detach($product);
             throw new ViolationHttpException($violations);
         }
     }

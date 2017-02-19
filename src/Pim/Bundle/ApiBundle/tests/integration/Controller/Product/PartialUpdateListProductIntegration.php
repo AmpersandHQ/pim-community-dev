@@ -55,9 +55,10 @@ JSON;
 
 JSON;
 
-        $content = $this->executeStreamRequest('PATCH', 'api/rest/v1/products', [], [], [], $data);
+        $response = $this->executeStreamRequest('PATCH', 'api/rest/v1/products', [], [], [], $data);
 
-        $this->assertSame($expectedContent, $content);
+        $this->assertSame(Response::HTTP_OK, $response['status']);
+        $this->assertSame($expectedContent, $response['content']);
     }
 
     public function testCreateAndUpdateSameProduct()
@@ -76,9 +77,10 @@ JSON;
 JSON;
 
 
-        $content = $this->executeStreamRequest('PATCH', 'api/rest/v1/products', [], [], [], $data);
+        $response = $this->executeStreamRequest('PATCH', 'api/rest/v1/products', [], [], [], $data);
 
-        $this->assertSame($expectedContent, $content);
+        $this->assertSame(Response::HTTP_OK, $response['status']);
+        $this->assertSame($expectedContent, $response['content']);
     }
 
     protected function getBufferSize()
@@ -91,7 +93,7 @@ JSON;
      *
      * The whole content of the request and the whole content of the response
      * are loaded in memory.
-     * Therefore, do not use this function on with an high volumetry in input or in ouput.
+     * Therefore, do not use this function on with an high input/output volumetry.
      *
      * @param string $method
      * @param string $uri
@@ -101,14 +103,14 @@ JSON;
      * @param null   $content
      * @param bool   $changeHistory
      *
-     * @return string
+     * @return array
      */
     public function executeStreamRequest($method, $uri, array $parameters = [], array $files = [], array $server = [], $content = null, $changeHistory = true)
     {
-        $streamedResponse = '';
+        $streamedContent = '';
 
-        ob_start(function($buffer) use (&$streamedResponse) {
-            $streamedResponse .= $buffer;
+        ob_start(function($buffer) use (&$streamedContent) {
+            $streamedContent .= $buffer;
 
             return '';
         });
@@ -119,9 +121,12 @@ JSON;
 
         ob_end_flush();
 
-        $this->assertSame(Response::HTTP_OK, $client->getResponse()->getStatusCode());
+        $response = [
+            'status'  => $client->getResponse()->getStatusCode(),
+            'content' => $streamedContent,
+        ];
 
-        return $streamedResponse;
+        return $response;
     }
 
     /**
