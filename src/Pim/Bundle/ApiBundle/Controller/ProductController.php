@@ -31,6 +31,7 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
+use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -87,14 +88,11 @@ class ProductController
     /** @var ProductFilterInterface */
     protected $emptyValuesFilter;
 
-    /** @var NormalizerInterface */
-    protected $fosNormalizer;
-
-    /** @var NormalizerInterface */
-    protected $apiNormalizer;
-
     /** @var UniqueValuesSet */
     protected $uniqueValueSet;
+
+    /** @var HttpKernelInterface */
+    protected $httpKernel;
 
     /** @var int */
     protected $bufferSize;
@@ -118,9 +116,8 @@ class ProductController
      * @param SaverInterface                        $saver
      * @param RouterInterface                       $router
      * @param ProductFilterInterface                $emptyValuesFilter
-     * @param NormalizerInterface                   $fosNormalizer
-     * @param NormalizerInterface                   $apiNormalizer
-     * @param UniqueValuesSet                       $uniqueValueSet
+     * @param UniqueValuesSet                       $uniqueValuesSet
+     * @param HttpKernelInterface                   $httpKernel
      * @param int                                   $bufferSize
      * @param string                                $urlDocumentation
      */
@@ -140,9 +137,8 @@ class ProductController
         SaverInterface $saver,
         RouterInterface $router,
         ProductFilterInterface $emptyValuesFilter,
-        NormalizerInterface $fosNormalizer,
-        NormalizerInterface $apiNormalizer,
         UniqueValuesSet $uniqueValuesSet,
+        HttpKernelInterface $httpKernel,
         $bufferSize,
         $urlDocumentation
     ) {
@@ -161,9 +157,8 @@ class ProductController
         $this->saver = $saver;
         $this->router = $router;
         $this->emptyValuesFilter = $emptyValuesFilter;
-        $this->fosNormalizer = $fosNormalizer;
-        $this->apiNormalizer = $apiNormalizer;
         $this->uniqueValueSet = $uniqueValuesSet;
+        $this->httpKernel = $httpKernel;
         $this->bufferSize = $bufferSize;
         $this->urlDocumentation = sprintf($urlDocumentation, substr(Version::VERSION, 0, 3));
     }
@@ -315,7 +310,33 @@ class ProductController
      */
     public function partialUpdateAction(Request $request, $code)
     {
-        return $this->partialProductUpdate($request->getContent(), $code);
+        $data = $this->getDecodedContent($request->getContent());
+        $isCreation = false;
+
+        $product = $this->productRepository->findOneByIdentifier($code);
+
+        if (null === $product) {
+            $isCreation = true;
+
+            $this->validateCodeConsistency($code, $data);
+            $data['identifier'] = $code;
+
+            $data = $this->populateIdentifierProductValue($data);
+            $product = $this->productBuilder->createProduct($data['identifier']);
+        } else {
+            $data['identifier'] = array_key_exists('identifier', $data) ? $data['identifier'] : $code;
+            $data = $this->populateIdentifierProductValue($data);
+            $data = $this->filterValues($product, $data);
+        }
+
+        $this->updateProduct($product, $data);
+        $this->validateProduct($product);
+        $this->saver->save($product);
+
+        $status = $isCreation ? Response::HTTP_CREATED : Response::HTTP_NO_CONTENT;
+        $response = $this->getResponse($product, $status);
+
+        return $response;
     }
 
     /**
@@ -338,10 +359,7 @@ class ProductController
     {
         $response = new StreamedResponse();
 
-        $fosNormalizer = $this->fosNormalizer;
-        $apiNormalizer = $this->apiNormalizer;
-
-        $response->setCallback(function() use ($request, $fosNormalizer, $apiNormalizer) {
+        $response->setCallback(function() use ($request) {
             $streamContent = $request->getContent(true);
 
             $line = true;
@@ -349,27 +367,38 @@ class ProductController
                 try {
                     $line = $this->readBuffer($streamContent);
                     if (false !== $line) {
-                        $response = $this->partialProductUpdate($line, null);
+                        $data = $this->getDecodedContent($line);
+
+                        if (!isset($data['identifier'])) {
+                            throw new UnprocessableEntityHttpException('Identifier is missing');
+                        }
+
+                        $subRequest = new Request([], [], [], [], [], [], $line);
+                        $subRequest->setRequestFormat('json');
+                        $subRequest->attributes->add([
+                            '_controller' => 'pim_api.controller.product:partialUpdateAction',
+                            'code'        => $data['identifier']
+                        ]);
+
+                        $subResponse = $this->httpKernel->handle($subRequest, HttpKernelInterface::SUB_REQUEST);
                         $this->uniqueValueSet->reset();
-                        echo json_encode(['code' => $response->getStatusCode()]).PHP_EOL;
+
+                        if ('' !== $subResponse->getContent()) {
+                            echo $subResponse->getContent() . PHP_EOL;
+                        } else {
+                            echo json_encode(['code' => $subResponse->getStatusCode()]) . PHP_EOL;
+                        }
                     }
-                } catch (DocumentedHttpException $e) {
-                    $error = $apiNormalizer->normalize($e);
-                    echo json_encode($error).PHP_EOL;
-                } catch (ViolationHttpException $e) {
-                    $error = $apiNormalizer->normalize($e);
-                    echo json_encode($error).PHP_EOL;
                 } catch (HttpException $e) {
-                    $error = $fosNormalizer->normalize($e);
-                    echo json_encode($error).PHP_EOL;
+                    echo json_encode(['code' => $e->getStatusCode(), 'message' => $e->getMessage()]).PHP_EOL;
                 }
 
                 ob_flush();
             } while (false !== $line);
-
         });
 
         $response->send();
+
         return $response;
     }
 
@@ -397,50 +426,6 @@ class ProductController
         }
 
         return $buffer;
-    }
-
-    /**
-     * Create or update a single product.
-     *
-     * @param string      $jsonContent product standardized with the json format
-     * @param string|null $code        code of the product provided in the url, null if not present in the url
-     *
-     * @return Response
-     */
-    protected function partialProductUpdate($jsonContent, $code)
-    {
-        $data = $this->getDecodedContent($jsonContent);
-        $isCreation = false;
-
-        if (null === $code && array_key_exists('identifier', $data)) {
-            $code = $data['identifier'];
-        }
-
-        $product = $this->productRepository->findOneByIdentifier($code);
-
-        if (null === $product) {
-
-            $isCreation = true;
-
-            $this->validateCodeConsistency($code, $data);
-            $data['identifier'] = $code;
-
-            $data = $this->populateIdentifierProductValue($data);
-            $product = $this->productBuilder->createProduct();
-        } else {
-            $data['identifier'] = array_key_exists('identifier', $data) ? $data['identifier'] : $code;
-            $data = $this->populateIdentifierProductValue($data);
-            $data = $this->filterValues($product, $data);
-        }
-
-        $this->updateProduct($product, $data);
-        $this->validateProduct($product);
-        $this->saver->save($product);
-
-        $status = $isCreation ? Response::HTTP_CREATED : Response::HTTP_NO_CONTENT;
-        $response = $this->getResponse($product, $status);
-
-        return $response;
     }
 
     /**

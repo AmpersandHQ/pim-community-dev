@@ -3,7 +3,6 @@
 namespace Pim\Bundle\ApiBundle\tests\integration\Controller\Product;
 
 use Akeneo\Test\Integration\Configuration;
-use Pim\Bundle\CatalogBundle\Version;
 use Symfony\Component\HttpFoundation\Response;
 
 class PartialUpdateListProductIntegration extends AbstractProductTestCase
@@ -42,16 +41,16 @@ JSON;
 
         $expectedContent =
 <<<JSON
-{"message":"Invalid json message received"}
-{"message":"Invalid json message received"}
-{"message":"Invalid json message received"}
-{"message":"Line is too long."}
-{"message":"Line is too long."}
-{"message":"Line is too long."}
-{"message":"Line is too long."}
-{"message":"Line is too long."}
-{"message":"Line is too long."}
-{"message":"Invalid json message received"}
+{"code":400,"message":"Invalid json message received"}
+{"code":400,"message":"Invalid json message received"}
+{"code":400,"message":"Invalid json message received"}
+{"code":422,"message":"Line is too long."}
+{"code":422,"message":"Line is too long."}
+{"code":422,"message":"Line is too long."}
+{"code":422,"message":"Line is too long."}
+{"code":422,"message":"Line is too long."}
+{"code":422,"message":"Line is too long."}
+{"code":400,"message":"Invalid json message received"}
 
 JSON;
 
@@ -75,6 +74,42 @@ JSON;
 
 JSON;
 
+
+        $content = $this->executeStreamRequest('PATCH', 'api/rest/v1/products', [], [], [], $data);
+
+        $this->assertSame($expectedContent, $content);
+    }
+
+    public function testValidationFailed()
+    {
+        $data =
+<<<JSON
+    {"identifier": "my_code", "values": {"a_number": [{"data": "text", "locale": null, "scope": null}]}}
+JSON;
+
+        $expectedContent =
+<<<JSON
+{"code":422,"message":"Property \"a_number\" does not exist. Check the standard format documentation.","_links":{"documentation":{"href":"https:\/\/docs.akeneo.com\/1.6\/reference\/standard_format\/products.html"}}}
+
+JSON;
+
+        $content = $this->executeStreamRequest('PATCH', 'api/rest/v1/products', [], [], [], $data);
+
+        $this->assertSame($expectedContent, $content);
+    }
+
+    public function testIdentifierMissing()
+    {
+        $data =
+<<<JSON
+    {"values": {"a_number": [{"data": 12, "locale": null, "scope": null}]}}
+JSON;
+
+        $expectedContent =
+<<<JSON
+{"code":422,"message":"Identifier is missing"}
+
+JSON;
 
         $content = $this->executeStreamRequest('PATCH', 'api/rest/v1/products', [], [], [], $data);
 

@@ -47,4 +47,4 @@ parameters:
     # Maximum number of items returned in the paginated responses of the API
     api_pagination_limit_max: 100
     # Maximum lenght of the resource's json representation when updating a list of ressources
-    api_buffer_size: 100
+    api_buffer_size: 5000
