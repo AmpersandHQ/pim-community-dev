@@ -391,10 +391,6 @@ class ProductController
                 }
 
                 $this->flushOutputBuffer($response);
-
-                //$date = date('h-i-s');
-                //gc_collect_cycles();
-                //meminfo_objects_summary(fopen(sprintf('/tmp/memory/summary_%s', $date), 'w'));
             } while (false !== $line);
 
         });
@@ -434,7 +430,7 @@ class ProductController
         }
 
         if ($bufferSizeExceeded) {
-            throw new UnprocessableEntityHttpException("Line is too long.");
+            throw new BadRequestHttpException("Line is too long.");
         }
 
         return $buffer;

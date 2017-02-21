@@ -42,16 +42,16 @@ JSON;
 
         $expectedContent =
 <<<JSON
-{"message":"Invalid json message received"}
-{"message":"Invalid json message received"}
-{"message":"Invalid json message received"}
-{"message":"Line is too long."}
-{"message":"Line is too long."}
-{"message":"Line is too long."}
-{"message":"Line is too long."}
-{"message":"Line is too long."}
-{"message":"Line is too long."}
-{"message":"Invalid json message received"}
+{"code":400,"message":"Invalid json message received"}
+{"code":400,"message":"Invalid json message received"}
+{"code":400,"message":"Invalid json message received"}
+{"code":400,"message":"Line is too long."}
+{"code":400,"message":"Line is too long."}
+{"code":400,"message":"Line is too long."}
+{"code":400,"message":"Line is too long."}
+{"code":400,"message":"Line is too long."}
+{"code":400,"message":"Line is too long."}
+{"code":400,"message":"Invalid json message received"}
 
 JSON;
 
@@ -71,8 +71,8 @@ JSON;
 
         $expectedContent =
 <<<JSON
-{"code":201}
-{"code":204}
+{"identifier":"my_code","code":201}
+{"identifier":"my_code","code":204}
 
 JSON;
 
